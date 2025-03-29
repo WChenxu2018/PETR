@@ -97,16 +97,16 @@ class PETRTransformer(BaseModule):
 
         # out_dec: [num_layers, num_query, bs, dim]
         out_dec = self.decoder(
-            query=target,
-            key=memory,
+            query=target, #torch.Size([900, 1, 256])
+            key=memory, #torch.Size([16896, 1, 256]) [H*W*相机数, B, D]
             value=memory,
-            key_pos=pos_embed,
-            query_pos=query_embed,
-            key_padding_mask=mask,
+            key_pos=pos_embed, #torch.Size([16896, 1, 256]) 3d的位置编码
+            query_pos=query_embed, #torch.Size([900, 1, 256])
+            key_padding_mask=mask, #torch.Size([1, 16896])
             reg_branch=reg_branch,
             )
-        out_dec = out_dec.transpose(1, 2)
-        memory = memory.reshape(n, h, w, bs, c).permute(3, 0, 4, 1, 2)
+        out_dec = out_dec.transpose(1, 2) #torch.Size([6, 1, 900, 256])
+        memory = memory.reshape(n, h, w, bs, c).permute(3, 0, 4, 1, 2) #torch.Size([1, 6, 256, 32, 88])
         return  out_dec, memory
 
 @TRANSFORMER.register_module()

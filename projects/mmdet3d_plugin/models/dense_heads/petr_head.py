@@ -283,23 +283,23 @@ class PETRHead(AnchorFreeHead):
         eps = 1e-5
         pad_h, pad_w, _ = img_metas[0]['pad_shape'][0]
         B, N, C, H, W = img_feats[self.position_level].shape
-        coords_h = torch.arange(H, device=img_feats[0].device).float() * pad_h / H
-        coords_w = torch.arange(W, device=img_feats[0].device).float() * pad_w / W
+        coords_h = torch.arange(H, device=img_feats[0].device).float() * pad_h / H #从0到pad_h均匀分布
+        coords_w = torch.arange(W, device=img_feats[0].device).float() * pad_w / W #从0到pad_w均匀分布
 
         if self.LID:
             index  = torch.arange(start=0, end=self.depth_num, step=1, device=img_feats[0].device).float()
             index_1 = index + 1
             bin_size = (self.position_range[3] - self.depth_start) / (self.depth_num * (1 + self.depth_num))
-            coords_d = self.depth_start + bin_size * index * index_1
+            coords_d = self.depth_start + bin_size * index * index_1 #初始化一个深度的距离分布
         else:
             index  = torch.arange(start=0, end=self.depth_num, step=1, device=img_feats[0].device).float()
             bin_size = (self.position_range[3] - self.depth_start) / self.depth_num
             coords_d = self.depth_start + bin_size * index
 
         D = coords_d.shape[0]
-        coords = torch.stack(torch.meshgrid([coords_w, coords_h, coords_d])).permute(1, 2, 3, 0) # W, H, D, 3
-        coords = torch.cat((coords, torch.ones_like(coords[..., :1])), -1)
-        coords[..., :2] = coords[..., :2] * torch.maximum(coords[..., 2:3], torch.ones_like(coords[..., 2:3])*eps)
+        coords = torch.stack(torch.meshgrid([coords_w, coords_h, coords_d])).permute(1, 2, 3, 0) # W, H, D, 3 #len(coords_w): 88, len(coords_h): 32 len(coords_d): 64 -> torch.Size([88, 32, 64, 3]) #初始化一个矩形长方体的网格
+        coords = torch.cat((coords, torch.ones_like(coords[..., :1])), -1) #torch.Size([88, 32, 64, 4]) 最后一维多加一个1
+        coords[..., :2] = coords[..., :2] * torch.maximum(coords[..., 2:3], torch.ones_like(coords[..., 2:3])*eps) #xy维度乘深度，扩散出一个锥形的区域
 
         img2lidars = []
         for img_meta in img_metas:
@@ -310,19 +310,19 @@ class PETRHead(AnchorFreeHead):
         img2lidars = np.asarray(img2lidars)
         img2lidars = coords.new_tensor(img2lidars) # (B, N, 4, 4)
 
-        coords = coords.view(1, 1, W, H, D, 4, 1).repeat(B, N, 1, 1, 1, 1, 1)
-        img2lidars = img2lidars.view(B, N, 1, 1, 1, 4, 4).repeat(1, 1, W, H, D, 1, 1)
-        coords3d = torch.matmul(img2lidars, coords).squeeze(-1)[..., :3]
-        coords3d[..., 0:1] = (coords3d[..., 0:1] - self.position_range[0]) / (self.position_range[3] - self.position_range[0])
+        coords = coords.view(1, 1, W, H, D, 4, 1).repeat(B, N, 1, 1, 1, 1, 1) #torch.Size([1, 6, 88, 32, 64, 4, 1])
+        img2lidars = img2lidars.view(B, N, 1, 1, 1, 4, 4).repeat(1, 1, W, H, D, 1, 1) #torch.Size([1, 6, 88, 32, 64, 4, 4])
+        coords3d = torch.matmul(img2lidars, coords).squeeze(-1)[..., :3] #像素坐标系到车体坐标系 torch.Size([1, 6, 88, 32, 64, 3])
+        coords3d[..., 0:1] = (coords3d[..., 0:1] - self.position_range[0]) / (self.position_range[3] - self.position_range[0]) #变换到实际的坐标尺度
         coords3d[..., 1:2] = (coords3d[..., 1:2] - self.position_range[1]) / (self.position_range[4] - self.position_range[1])
         coords3d[..., 2:3] = (coords3d[..., 2:3] - self.position_range[2]) / (self.position_range[5] - self.position_range[2])
 
         coords_mask = (coords3d > 1.0) | (coords3d < 0.0) 
-        coords_mask = coords_mask.flatten(-2).sum(-1) > (D * 0.5)
+        coords_mask = coords_mask.flatten(-2).sum(-1) > (D * 0.5) #没太看懂，看起来是坐标太大的被过滤掉
         coords_mask = masks | coords_mask.permute(0, 1, 3, 2)
-        coords3d = coords3d.permute(0, 1, 4, 5, 3, 2).contiguous().view(B*N, -1, H, W)
-        coords3d = inverse_sigmoid(coords3d)
-        coords_position_embeding = self.position_encoder(coords3d)
+        coords3d = coords3d.permute(0, 1, 4, 5, 3, 2).contiguous().view(B*N, -1, H, W) #
+        coords3d = inverse_sigmoid(coords3d) #torch.Size([6, 192, 32, 88]) [B*C, 深度*xyz, H, W]
+        coords_position_embeding = self.position_encoder(coords3d) #torch.Size([6, 256, 32, 88])
         
         return coords_position_embeding.view(B, N, self.embed_dims, H, W), coords_mask
 
@@ -371,7 +371,7 @@ class PETRHead(AnchorFreeHead):
                 Shape [nb_dec, bs, num_query, 9].
         """
         
-        x = mlvl_feats[0]
+        x = mlvl_feats[0] #torch.Size([1, 6, 256, 32, 88])
         batch_size, num_cams = x.size(0), x.size(1)
         input_img_h, input_img_w, _ = img_metas[0]['pad_shape'][0]
         masks = x.new_ones(
@@ -380,18 +380,18 @@ class PETRHead(AnchorFreeHead):
             for cam_id in range(num_cams):
                 img_h, img_w, _ = img_metas[img_id]['img_shape'][cam_id]
                 masks[img_id, cam_id, :img_h, :img_w] = 0
-        x = self.input_proj(x.flatten(0,1))
-        x = x.view(batch_size, num_cams, *x.shape[-3:])
+        x = self.input_proj(x.flatten(0,1)) #torch.Size([6, 256, 32, 88])
+        x = x.view(batch_size, num_cams, *x.shape[-3:]) #torch.Size([1, 6, 256, 32, 88])
         # interpolate masks to have the same spatial shape with x
         masks = F.interpolate(
-            masks, size=x.shape[-2:]).to(torch.bool)
+            masks, size=x.shape[-2:]).to(torch.bool) #torch.Size([1, 6, 512, 1408]) -> #torch.Size([1, 6, 32, 88])
 
         if self.with_position:
             coords_position_embeding, _ = self.position_embeding(mlvl_feats, img_metas, masks)
-            pos_embed = coords_position_embeding
+            pos_embed = coords_position_embeding #torch.Size([1, 6, 256, 32, 88])
             if self.with_multiview:
-                sin_embed = self.positional_encoding(masks)
-                sin_embed = self.adapt_pos3d(sin_embed.flatten(0, 1)).view(x.size())
+                sin_embed = self.positional_encoding(masks) #torch.Size([1, 6, 384, 32, 88])
+                sin_embed = self.adapt_pos3d(sin_embed.flatten(0, 1)).view(x.size()) #torch.Size([1, 6, 256, 32, 88])
                 pos_embed = pos_embed + sin_embed
             else:
                 pos_embeds = []
@@ -412,9 +412,9 @@ class PETRHead(AnchorFreeHead):
                     pos_embeds.append(pos_embed.unsqueeze(1))
                 pos_embed = torch.cat(pos_embeds, 1)
 
-        reference_points = self.reference_points.weight
-        query_embeds = self.query_embedding(pos2posemb3d(reference_points))
-        reference_points = reference_points.unsqueeze(0).repeat(batch_size, 1, 1) #.sigmoid()
+        reference_points = self.reference_points.weight #torch.Size([900, 3])
+        query_embeds = self.query_embedding(pos2posemb3d(reference_points)) #torch.Size([900, 256])
+        reference_points = reference_points.unsqueeze(0).repeat(batch_size, 1, 1) #.sigmoid() torch.Size([1, 900, 3])
 
         outs_dec, _ = self.transformer(x, masks, query_embeds, pos_embed, self.reg_branches)
         outs_dec = torch.nan_to_num(outs_dec)

@@ -166,7 +166,7 @@ class Petr3D(MVXTwoStageDetector):
             dict: Losses of different branches.
         """
 
-        img_feats = self.extract_feat(img=img, img_metas=img_metas)
+        img_feats = self.extract_feat(img=img, img_metas=img_metas) #img: torch.Size([1, 6, 3, 512, 1408])-> img_feats[0].shape: torch.Size([1, 6, 256, 32, 88]),img_feats[1].shape:torch.Size([1, 6, 256, 16, 44]) 
 
         losses = dict()
         losses_pts = self.forward_pts_train(img_feats, gt_bboxes_3d,

@@ -1,6 +1,6 @@
 _base_ = [
-    '../../../mmdetection3d/configs/_base_/datasets/nus-3d.py',
-    '../../../mmdetection3d/configs/_base_/default_runtime.py'
+    '/mnt/data/project/MapTR/projects/configs/_base_/datasets/nus-3d.py',
+    '/mnt/data/project/MapTR/projects/configs/_base_/default_runtime.py'
 ]
 backbone_norm_cfg = dict(type='LN', requires_grad=True)
 plugin=True
@@ -113,7 +113,7 @@ model = dict(
             pc_range=point_cloud_range))))
 
 dataset_type = 'CustomNuScenesDataset'
-data_root = '/data/Dataset/nuScenes/'
+data_root = 'data/nuscenes/'
 
 file_client_args = dict(backend='disk')
 db_sampler = dict()
@@ -169,7 +169,7 @@ data = dict(
     train=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file=data_root + 'nuscenes_infos_train.pkl',
+        ann_file=data_root + 'nuscenes_infos_temporal_train.pkl',
         pipeline=train_pipeline,
         classes=class_names,
         modality=input_modality,
