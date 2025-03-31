@@ -321,8 +321,8 @@ class PETRHead(AnchorFreeHead):
         coords_mask = coords_mask.flatten(-2).sum(-1) > (D * 0.5) #没太看懂，看起来是坐标太大的被过滤掉
         coords_mask = masks | coords_mask.permute(0, 1, 3, 2)
         coords3d = coords3d.permute(0, 1, 4, 5, 3, 2).contiguous().view(B*N, -1, H, W) #
-        coords3d = inverse_sigmoid(coords3d) #torch.Size([6, 192, 32, 88]) [B*C, 深度*xyz, H, W]
-        coords_position_embeding = self.position_encoder(coords3d) #torch.Size([6, 256, 32, 88])
+        coords3d = inverse_sigmoid(coords3d) #torch.Size([6, 192, 32, 88]) [B*C, 深度*xyz, H, W] 实质上就是每个HW，加入了深度的信息
+        coords_position_embeding = self.position_encoder(coords3d) #torch.Size([6, 256, 32, 88]) 
         
         return coords_position_embeding.view(B, N, self.embed_dims, H, W), coords_mask
 
